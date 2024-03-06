@@ -27,8 +27,8 @@ def validate_args(measure: str, normalize: bool) -> None:
 
 # TODO tolerance (atol) should be higher if using entropy instead of diversity
 # because entropy uses logs, which are more numerically stable
-def power_mean(
-    order: float, weights: Tensor, items: Tensor, atol: float = 1e-6
+def weighted_power_mean(
+    items: Tensor, weights: Tensor, order: float, atol: float = 1e-6
 ) -> Tensor:
     weight_is_nonzero = abs(weights) >= atol
     if isclose(order, 0.0, atol=atol):
@@ -39,12 +39,12 @@ def power_mean(
     elif order > 100:
         return amax(where(weight_is_nonzero, items, float("-inf")), dim=0)
     else:
-        pow_items = pow(items, order)
-        weighted_pow_items = where(
-            weight_is_nonzero, pow_items * weights, zeros_like(items)
+        exponentiated_items = pow(items, exponent=order)
+        weighted_items = where(
+            weight_is_nonzero, exponentiated_items * weights, zeros_like(items)
         )
-        items_sum = sum(weighted_pow_items, dim=0)
-        return pow(items_sum, 1 / order)
+        weighted_item_sum = sum(weighted_items, dim=0)
+        return pow(weighted_item_sum, exponent=1 / order)
 
 
 def alpha(abundance: Tensor, _) -> Tensor:
@@ -94,22 +94,31 @@ class FrequencySensitiveDiversity(Module):
     def __init__(self, viewpoint: float, measure: str, normalize: bool = True) -> None:
         super().__init__()
         validate_args(measure, normalize)
-        self.viewpoint = viewpoint
+        self.order = 1.0 - viewpoint
         self.measure = FREQUENCY_MEASURES[(measure, normalize)]
 
-    def forward(self, abundance: Tensor) -> Tensor:
-        normalizing_constants = abundance.sum(dim=0)
+    def subcommunity_diversity(
+        self, abundance: Tensor, normalizing_constants: Tensor
+    ) -> Tensor:
         normalized_abundance = abundance / normalizing_constants
         community_ratio = self.measure(abundance, normalized_abundance)
+        # TODO: check if this is necessary
         community_ratio = where(
             community_ratio != 0.0, community_ratio, zeros_like(community_ratio)
         )
-        order = 1.0 - self.viewpoint
-        subcommunity_diversity = power_mean(
-            weights=normalized_abundance, items=community_ratio, order=order
+        return weighted_power_mean(
+            items=community_ratio, weights=normalized_abundance, order=self.order
         )
-        return power_mean(
-            weights=normalizing_constants, items=subcommunity_diversity, order=order
+
+    def forward(self, abundance: Tensor) -> Tensor:
+        normalizing_constants = abundance.sum(dim=0)
+        subcommunity_diversity = self.subcommunity_diversity(
+            abundance=abundance, normalizing_constants=normalizing_constants
+        )
+        return weighted_power_mean(
+            items=subcommunity_diversity,
+            weights=normalizing_constants,
+            order=self.order,
         )
 
 
@@ -171,20 +180,31 @@ class SimilaritySensitiveDiversity(Module):
     def __init__(self, viewpoint: float, measure: str, normalize: bool = True) -> None:
         super().__init__()
         validate_args(measure, normalize)
-        self.viewpoint = viewpoint
+        self.order = 1.0 - viewpoint
         self.measure = SIMILARITY_MEASURES[(measure, normalize)]
 
-    def forward(self, abundance: Tensor, similarity) -> Tensor:
-        normalizing_constants = abundance.sum(dim=0)
+    def subcommunity_diversity(
+        self, abundance: Tensor, normalizing_constants: Tensor, similarity: Tensor
+    ) -> Tensor:
         normalized_abundance = abundance / normalizing_constants
         community_ratio = self.measure(abundance, normalized_abundance, similarity)
+        # TODO: check if this is necessary
         community_ratio = where(
             community_ratio != 0.0, community_ratio, zeros_like(community_ratio)
         )
-        order = 1.0 - self.viewpoint
-        subcommunity_diversity = power_mean(
-            weights=normalized_abundance, items=community_ratio, order=order
+        return weighted_power_mean(
+            items=community_ratio, weights=normalized_abundance, order=self.order
         )
-        return power_mean(
-            weights=normalizing_constants, items=subcommunity_diversity, order=order
+
+    def forward(self, abundance: Tensor, similarity: Tensor) -> Tensor:
+        normalizing_constants = abundance.sum(dim=0)
+        subcommunity_diversity = self.subcommunity_diversity(
+            abundance=abundance,
+            normalizing_constants=normalizing_constants,
+            similarity=similarity,
+        )
+        return weighted_power_mean(
+            items=subcommunity_diversity,
+            weights=normalizing_constants,
+            order=self.order,
         )
