@@ -1,9 +1,5 @@
-from diversityloss.diversity import (
-    FrequencySensitiveDiversity,
-    SimilaritySensitiveDiversity,
-)
+from diversityloss.diversity import Diversity, MEASURES
 import torch
-from diversityloss.diversity import FREQUENCY_MEASURES, SIMILARITY_MEASURES
 
 
 def main():
@@ -19,19 +15,15 @@ def main():
             [0.7, 0.7, 0.7, 0.5, 0.5, 1.0],
         ]
     )
-    for measure in FREQUENCY_MEASURES.keys():
-        diversity = FrequencySensitiveDiversity(
-            viewpoint=1.0, measure=measure[0], normalize=measure[1]
-        )
-        d = diversity(abundance)
-        print(measure, d)
+    for measure in MEASURES.keys():
+        diversity = Diversity(viewpoint=1.0, measure=measure[0], normalize=measure[1])
+        D = diversity(abundance)
+        print(measure, D)
     print()
-    for measure in SIMILARITY_MEASURES.keys():
-        diversity = SimilaritySensitiveDiversity(
-            viewpoint=1.0, measure=measure[0], normalize=measure[1]
-        )
-        d = diversity(abundance, similarity)
-        print(measure, d)
+    for measure in MEASURES.keys():
+        diversity = Diversity(viewpoint=1.0, measure=measure[0], normalize=measure[1])
+        D_Z = diversity(abundance, similarity)
+        print(measure, D_Z)
 
 
 if __name__ == "__main__":

@@ -25,8 +25,12 @@ def validate_args(measure: str, normalize: bool) -> None:
         raise ValueError(f"Invalid 'normalize' argument: {normalize}. Expected a bool.")
 
 
+MAX_ORDER = 32
+
+
 # TODO tolerance (atol) should be higher if using entropy instead of diversity
-# because entropy uses logs, which are more numerically stable
+# because entropy uses logs, which are more numerically stable; also can increase
+# the maximum order
 def weighted_power_mean(
     items: Tensor, weights: Tensor, order: float, atol: float = 1e-6
 ) -> Tensor:
@@ -34,9 +38,9 @@ def weighted_power_mean(
     if isclose(order, 0.0, atol=atol):
         weighted_items = where(weight_is_nonzero, pow(items, weights), ones_like(items))
         return prod(weighted_items, dim=0)
-    elif order < -100:
+    elif order < -MAX_ORDER:
         return amin(where(weight_is_nonzero, items, float("inf")), dim=0)
-    elif order > 100:
+    elif order > MAX_ORDER:
         return amax(where(weight_is_nonzero, items, float("-inf")), dim=0)
     else:
         exponentiated_items = pow(items, exponent=order)
@@ -47,39 +51,56 @@ def weighted_power_mean(
         return pow(weighted_item_sum, exponent=1 / order)
 
 
-def alpha(abundance: Tensor, _) -> Tensor:
-    return 1 / abundance
+def weight_abundance(abundance: Tensor, similarity: Tensor | None = None) -> Tensor:
+    if similarity is None:
+        return abundance
+    return similarity @ abundance
 
 
-def rho(abundance: Tensor, _) -> Tensor:
+def alpha(abundance: Tensor, _, similarity: Tensor | None = None) -> Tensor:
+    return 1 / weight_abundance(abundance, similarity)
+
+
+def rho(abundance: Tensor, _, similarity: Tensor | None = None) -> Tensor:
+    subcommunity_similarity = weight_abundance(abundance, similarity)
     metacommunity_abundance = abundance.sum(dim=1, keepdim=True)
-    return abundance / metacommunity_abundance
+    metacommunity_similarity = weight_abundance(metacommunity_abundance, similarity)
+    return metacommunity_similarity / subcommunity_similarity
 
 
-def beta(abundance: Tensor, _) -> Tensor:
-    return 1 / rho(abundance, _)
+def beta(abundance: Tensor, _, similarity: Tensor | None = None) -> Tensor:
+    return 1 / rho(abundance, _, similarity)
 
 
-def gamma(abundance: Tensor, _) -> Tensor:
+def gamma(abundance: Tensor, _, similarity: Tensor | None = None) -> Tensor:
     metacommunity_abundance = abundance.sum(dim=1, keepdim=True)
     metacommunity_abundance = broadcast_to(metacommunity_abundance, abundance.shape)
-    return 1 / metacommunity_abundance
+    metacommunity_similarity = weight_abundance(metacommunity_abundance, similarity)
+    return 1 / metacommunity_similarity
 
 
-def normalized_alpha(_, normalized_abundance: Tensor) -> Tensor:
-    return 1 / normalized_abundance
+def normalized_alpha(_, normalized_abundance: Tensor, similarity: Tensor | None = None):
+    return 1 / weight_abundance(normalized_abundance, similarity)
 
 
-def normalized_rho(abundance: Tensor, normalized_abundance: Tensor) -> Tensor:
+def normalized_rho(
+    abundance: Tensor, normalized_abundance: Tensor, similarity: Tensor | None = None
+) -> Tensor:
+    normalized_subcommunity_similarity = weight_abundance(
+        normalized_abundance, similarity
+    )
     metacommunity_abundance = abundance.sum(dim=1, keepdim=True)
-    return metacommunity_abundance / normalized_abundance
+    metacommunity_similarity = weight_abundance(metacommunity_abundance, similarity)
+    return metacommunity_similarity / normalized_subcommunity_similarity
 
 
-def normalized_beta(abundance: Tensor, normalized_abundance: Tensor) -> Tensor:
-    return 1 / normalized_rho(abundance, normalized_abundance)
+def normalized_beta(
+    abundance: Tensor, normalized_abundance: Tensor, similarity: Tensor | None = None
+) -> Tensor:
+    return 1 / normalized_rho(abundance, normalized_abundance, similarity)
 
 
-FREQUENCY_MEASURES: dict[tuple[str, bool], Callable[[Tensor, Tensor], Tensor]] = {
+MEASURES: dict[tuple[str, bool], Callable[[Tensor, Tensor, Tensor | None], Tensor]] = {
     ("alpha", False): alpha,
     ("beta", False): beta,
     ("rho", False): rho,
@@ -90,101 +111,18 @@ FREQUENCY_MEASURES: dict[tuple[str, bool], Callable[[Tensor, Tensor], Tensor]] =
 }
 
 
-class FrequencySensitiveDiversity(Module):
+class Diversity(Module):
     def __init__(self, viewpoint: float, measure: str, normalize: bool = True) -> None:
         super().__init__()
         validate_args(measure, normalize)
         self.order = 1.0 - viewpoint
-        self.measure = FREQUENCY_MEASURES[(measure, normalize)]
+        self.measure = MEASURES[(measure, normalize)]
 
     def subcommunity_diversity(
-        self, abundance: Tensor, normalizing_constants: Tensor
-    ) -> Tensor:
-        normalized_abundance = abundance / normalizing_constants
-        community_ratio = self.measure(abundance, normalized_abundance)
-        # TODO: check if this is necessary
-        community_ratio = where(
-            community_ratio != 0.0, community_ratio, zeros_like(community_ratio)
-        )
-        return weighted_power_mean(
-            items=community_ratio, weights=normalized_abundance, order=self.order
-        )
-
-    def forward(self, abundance: Tensor) -> Tensor:
-        normalizing_constants = abundance.sum(dim=0)
-        subcommunity_diversity = self.subcommunity_diversity(
-            abundance=abundance, normalizing_constants=normalizing_constants
-        )
-        return weighted_power_mean(
-            items=subcommunity_diversity,
-            weights=normalizing_constants,
-            order=self.order,
-        )
-
-
-def alpha_similarity(abundance: Tensor, _, similarity: Tensor) -> Tensor:
-    return 1 / (similarity @ abundance)
-
-
-def rho_similarity(abundance: Tensor, _, similarity: Tensor) -> Tensor:
-    subcommunity_similarity = similarity @ abundance
-    metacommunity_abundance = abundance.sum(dim=1, keepdim=True)
-    metacommunity_similarity = similarity @ metacommunity_abundance
-    return metacommunity_similarity / subcommunity_similarity
-
-
-def beta_similarity(abundance: Tensor, _, similarity: Tensor) -> Tensor:
-    return 1 / rho_similarity(abundance, _, similarity)
-
-
-def gamma_similarity(abundance: Tensor, _, similarity: Tensor) -> Tensor:
-    metacommunity_abundance = abundance.sum(dim=1, keepdim=True)
-    metacommunity_abundance = broadcast_to(metacommunity_abundance, abundance.shape)
-    metacommunity_similarity = similarity @ metacommunity_abundance
-    return 1 / metacommunity_similarity
-
-
-def normalized_alpha_similarity(_, normalized_abundance: Tensor, similarity: Tensor):
-    return 1 / (similarity @ normalized_abundance)
-
-
-def normalized_rho_similarity(
-    abundance: Tensor, normalized_abundance: Tensor, similarity: Tensor
-) -> Tensor:
-    normalized_subcommunity_similarity = similarity @ normalized_abundance
-    metacommunity_abundance = abundance.sum(dim=1, keepdim=True)
-    metacommunity_similarity = similarity @ metacommunity_abundance
-    return metacommunity_similarity / normalized_subcommunity_similarity
-
-
-def normalized_beta_similarity(
-    abundance: Tensor, normalized_abundance: Tensor, similarity: Tensor
-) -> Tensor:
-    return 1 / normalized_rho_similarity(abundance, normalized_abundance, similarity)
-
-
-SIMILARITY_MEASURES: dict[
-    tuple[str, bool], Callable[[Tensor, Tensor, Tensor], Tensor]
-] = {
-    ("alpha", False): alpha_similarity,
-    ("beta", False): beta_similarity,
-    ("rho", False): rho_similarity,
-    ("gamma", False): gamma_similarity,
-    ("alpha", True): normalized_alpha_similarity,
-    ("beta", True): normalized_beta_similarity,
-    ("rho", True): normalized_rho_similarity,
-}
-
-
-class SimilaritySensitiveDiversity(Module):
-    def __init__(self, viewpoint: float, measure: str, normalize: bool = True) -> None:
-        super().__init__()
-        validate_args(measure, normalize)
-        self.order = 1.0 - viewpoint
-        self.measure = SIMILARITY_MEASURES[(measure, normalize)]
-
-    def subcommunity_diversity(
-        self, abundance: Tensor, normalizing_constants: Tensor, similarity: Tensor
+        self,
+        abundance: Tensor,
+        normalizing_constants: Tensor,
+        similarity: Tensor | None = None,
     ) -> Tensor:
         normalized_abundance = abundance / normalizing_constants
         community_ratio = self.measure(abundance, normalized_abundance, similarity)
@@ -196,7 +134,7 @@ class SimilaritySensitiveDiversity(Module):
             items=community_ratio, weights=normalized_abundance, order=self.order
         )
 
-    def forward(self, abundance: Tensor, similarity: Tensor) -> Tensor:
+    def forward(self, abundance: Tensor, similarity: Tensor | None = None) -> Tensor:
         normalizing_constants = abundance.sum(dim=0)
         subcommunity_diversity = self.subcommunity_diversity(
             abundance=abundance,
