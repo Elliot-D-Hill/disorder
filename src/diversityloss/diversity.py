@@ -16,21 +16,12 @@ from torch.nn import Module
 from numpy import isclose
 
 
-def validate_args(measure: str, normalize: bool) -> None:
-    if measure not in {"alpha", "beta", "rho", "gamma"}:
-        raise ValueError(
-            f"Invalid 'measure' argument: {measure}. Expected one of: 'alpha', 'beta', 'rho', 'gamma'."
-        )
-    if not isinstance(normalize, bool):
-        raise ValueError(f"Invalid 'normalize' argument: {normalize}. Expected a bool.")
-
-
 MAX_ORDER = 32
 
 
 # TODO tolerance (atol) should be higher if using entropy instead of diversity
-# because entropy uses logs, which are more numerically stable; also can increase
-# the maximum order
+# because entropy uses logs, which are more numerically stable; we can also can
+# increase the max and min order
 def weighted_power_mean(
     items: Tensor, weights: Tensor, order: float, atol: float = 1e-6
 ) -> Tensor:
@@ -100,23 +91,35 @@ def normalized_beta(
     return 1 / normalized_rho(abundance, normalized_abundance, similarity)
 
 
+# Note: gamma cannot be normalized, so it will be returned whether normalize = True or False
 MEASURES: dict[tuple[str, bool], Callable[[Tensor, Tensor, Tensor | None], Tensor]] = {
     ("alpha", False): alpha,
     ("beta", False): beta,
     ("rho", False): rho,
-    ("gamma", False): gamma,
     ("alpha", True): normalized_alpha,
     ("beta", True): normalized_beta,
     ("rho", True): normalized_rho,
+    ("gamma", True): gamma,
+    ("gamma", False): gamma,
 }
 
 
 class Diversity(Module):
     def __init__(self, viewpoint: float, measure: str, normalize: bool = True) -> None:
         super().__init__()
-        validate_args(measure, normalize)
+        self._validate_args(measure, normalize)
         self.order = 1.0 - viewpoint
         self.measure = MEASURES[(measure, normalize)]
+
+    def _validate_args(self, measure: str, normalize: bool) -> None:
+        if measure not in {"alpha", "beta", "rho", "gamma"}:
+            raise ValueError(
+                f"Invalid 'measure' argument: {measure}. Expected one of: 'alpha', 'beta', 'rho', 'gamma'."
+            )
+        if not isinstance(normalize, bool):
+            raise ValueError(
+                f"Invalid 'normalize' argument: {normalize}. Expected a bool."
+            )
 
     def subcommunity_diversity(
         self,
