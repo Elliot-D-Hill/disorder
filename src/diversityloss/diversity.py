@@ -129,10 +129,6 @@ class Diversity(Module):
     ) -> Tensor:
         normalized_abundance = abundance / normalizing_constants
         community_ratio = self.measure(abundance, normalized_abundance, similarity)
-        # TODO: check if this is necessary
-        community_ratio = where(
-            community_ratio != 0.0, community_ratio, zeros_like(community_ratio)
-        )
         return weighted_power_mean(
             items=community_ratio, weights=normalized_abundance, order=self.order
         )
