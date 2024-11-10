@@ -1,20 +1,17 @@
 from typing import Callable
+
+from numpy import isclose
 from torch import (
     Tensor,
-    broadcast_to,
-    prod,
-    pow,
-    amin,
-    amax,
-    sum,
-    where,
-    ones_like,
-    zeros_like,
     abs,
+    amax,
+    amin,
+    broadcast_to,
+    pow,
+    prod,
+    sum,
 )
 from torch.nn import Module
-from numpy import isclose
-
 
 MAX_ORDER = 32
 
@@ -23,21 +20,19 @@ MAX_ORDER = 32
 # because entropy uses logs, which are more numerically stable; we can also can
 # increase the max and min order
 def weighted_power_mean(
-    items: Tensor, weights: Tensor, order: float, atol: float = 1e-6
+    items: Tensor, weights: Tensor, order: float, atol: float = 1e-7
 ) -> Tensor:
-    weight_is_nonzero = abs(weights) >= atol
+    weight_is_zero = abs(weights) < atol
     if isclose(order, 0.0, atol=atol):
-        weighted_items = where(weight_is_nonzero, pow(items, weights), ones_like(items))
+        weighted_items = pow(items, weights).masked_fill(weight_is_zero, 1.0)
         return prod(weighted_items, dim=0)
     elif order < -MAX_ORDER:
-        return amin(where(weight_is_nonzero, items, float("inf")), dim=0)
+        return amin(items.masked_fill(weight_is_zero, float("inf")), dim=0)
     elif order > MAX_ORDER:
-        return amax(where(weight_is_nonzero, items, float("-inf")), dim=0)
+        return amax(items.masked_fill(weight_is_zero, float("-inf")), dim=0)
     else:
-        exponentiated_items = pow(items, exponent=order)
-        weighted_items = where(
-            weight_is_nonzero, exponentiated_items * weights, zeros_like(items)
-        )
+        exponentiated_items = pow(items, order).masked_fill(weight_is_zero, 0.0)
+        weighted_items = exponentiated_items * weights
         weighted_item_sum = sum(weighted_items, dim=0)
         return pow(weighted_item_sum, exponent=1 / order)
 
@@ -60,7 +55,7 @@ def rho(abundance: Tensor, _, similarity: Tensor | None = None) -> Tensor:
 
 
 def beta(abundance: Tensor, _, similarity: Tensor | None = None) -> Tensor:
-    return 1 / rho(abundance, _, similarity)
+    return rho(abundance, _, similarity)
 
 
 def gamma(abundance: Tensor, _, similarity: Tensor | None = None) -> Tensor:
@@ -88,7 +83,7 @@ def normalized_rho(
 def normalized_beta(
     abundance: Tensor, normalized_abundance: Tensor, similarity: Tensor | None = None
 ) -> Tensor:
-    return 1 / normalized_rho(abundance, normalized_abundance, similarity)
+    return normalized_rho(abundance, normalized_abundance, similarity)
 
 
 # Note: gamma cannot be normalized, so it will be returned whether normalize = True or False
@@ -118,7 +113,7 @@ class Diversity(Module):
             )
         if not isinstance(normalize, bool):
             raise ValueError(
-                f"Invalid 'normalize' argument: {normalize}. Expected a bool."
+                f"Invalid 'normalize' argument: {normalize}. Expected type bool."
             )
 
     def subcommunity_diversity(
@@ -129,11 +124,16 @@ class Diversity(Module):
     ) -> Tensor:
         normalized_abundance = abundance / normalizing_constants
         community_ratio = self.measure(abundance, normalized_abundance, similarity)
-        return weighted_power_mean(
+        power_mean = weighted_power_mean(
             items=community_ratio, weights=normalized_abundance, order=self.order
         )
+        if self.measure in {beta, normalized_beta}:
+            power_mean = 1 / power_mean
+        return power_mean
 
-    def forward(self, abundance: Tensor, similarity: Tensor | None = None) -> Tensor:
+    def metacommunity_diversity(
+        self, abundance: Tensor, similarity: Tensor | None = None
+    ) -> Tensor:
         normalizing_constants = abundance.sum(dim=0)
         subcommunity_diversity = self.subcommunity_diversity(
             abundance=abundance,
@@ -145,3 +145,6 @@ class Diversity(Module):
             weights=normalizing_constants,
             order=self.order,
         )
+
+    def forward(self, abundance: Tensor, similarity: Tensor | None = None) -> Tensor:
+        return self.metacommunity_diversity(abundance, similarity)

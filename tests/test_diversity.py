@@ -1,16 +1,16 @@
-import torch
-from pytest import mark
-from hypothesis import strategies as st, given
-from hypothesis.extra.numpy import arrays
 import numpy as np
-
+import torch
 from diversityloss.diversity import Diversity
+from hypothesis import given
+from hypothesis import strategies as st
+from hypothesis.extra.numpy import arrays
+from pytest import mark
 
 n_tests = 10
 
-counts = torch.tensor([[1, 0], [1, 0], [1, 0], [0, 1], [0, 1], [0, 1]])
-abundance = counts / counts.sum()
-similarity = torch.tensor(
+counts_6by2 = torch.tensor([[1, 0], [1, 0], [1, 0], [0, 1], [0, 1], [0, 1]])
+abundance_6by2 = counts_6by2 / counts_6by2.sum()
+similarity_6by2 = torch.tensor(
     [
         [1.0, 0.5, 0.5, 0.7, 0.7, 0.7],
         [0.5, 1.0, 0.5, 0.7, 0.7, 0.7],
@@ -20,30 +20,58 @@ similarity = torch.tensor(
         [0.7, 0.7, 0.7, 0.5, 0.5, 1.0],
     ]
 )
+counts_3by2 = torch.tensor(
+    [
+        [1, 5],
+        [3, 0],
+        [0, 1],
+    ]
+)
+abundance_3by2 = counts_3by2 / counts_3by2.sum()
+similarity_3by2 = torch.tensor(
+    [
+        [1.0, 0.5, 0.1],
+        [0.5, 1.0, 0.2],
+        [0.1, 0.2, 1.0],
+    ]
+)
+# args: abundance, viewpoint, measure, normalize, similarity, expected
 argvalues = [
-    (0.0, "alpha", False, None, 6.0),
-    (1.0, "rho", False, None, 1.0),
-    (2.0, "beta", False, None, 1.0),
-    (3.0, "gamma", False, None, 6.0),
-    (4.0, "alpha", True, None, 3.0),
-    (5.0, "rho", True, None, 0.5),
-    (6.0, "beta", True, None, 2.0),
-    (7.0, "gamma", True, None, 6.0),
-    (8.0, "alpha", False, similarity, 3.0),
-    (9.0, "rho", False, similarity, 2.05),
-    (10.0, "beta", False, similarity, 0.487805),
-    (11.0, "gamma", True, similarity, 1.463415),
-    (12.0, "alpha", True, similarity, 1.5),
-    (13.0, "rho", True, similarity, 1.025),
-    (14.0, "beta", True, similarity, 0.97561),
-    (15.0, "gamma", True, similarity, 1.463415),
+    (abundance_6by2, 0.0, "alpha", False, None, 6.0),
+    (abundance_6by2, 1.0, "rho", False, None, 1.0),
+    (abundance_6by2, 2.0, "beta", False, None, 1.0),
+    (abundance_6by2, 3.0, "gamma", False, None, 6.0),
+    (abundance_6by2, 4.0, "alpha", True, None, 3.0),
+    (abundance_6by2, 5.0, "rho", True, None, 0.5),
+    (abundance_6by2, 6.0, "beta", True, None, 2.0),
+    (abundance_6by2, 7.0, "gamma", True, None, 6.0),
+    (abundance_6by2, 8.0, "alpha", False, similarity_6by2, 3.0),
+    (abundance_6by2, 9.0, "rho", False, similarity_6by2, 2.05),
+    (abundance_6by2, 10.0, "beta", False, similarity_6by2, 0.487805),
+    (abundance_6by2, 11.0, "gamma", True, similarity_6by2, 1.463415),
+    (abundance_6by2, 12.0, "alpha", True, similarity_6by2, 1.5),
+    (abundance_6by2, 13.0, "rho", True, similarity_6by2, 1.025),
+    (abundance_6by2, 14.0, "beta", True, similarity_6by2, 0.97561),
+    (abundance_6by2, 15.0, "gamma", True, similarity_6by2, 1.463415),
+    (abundance_3by2, 2.0, "alpha", False, None, 2.7777777777777777),
+    (abundance_3by2, 2.0, "rho", False, None, 1.2),
+    (abundance_3by2, 2.0, "beta", False, None, 0.8319209039548022),
+    (abundance_3by2, 2.0, "gamma", False, None, 2.173913043478261),
+    (abundance_3by2, 2.0, "alpha", True, None, 1.4634146341463414),
+    (abundance_3by2, 2.0, "rho", True, None, 0.6050420168067228),
+    (abundance_3by2, 2.0, "beta", True, None, 1.612461673236969),
+    (abundance_3by2, 2.0, "alpha", False, similarity_3by2, 2.5),
+    (abundance_3by2, 2.0, "rho", False, similarity_3by2, 1.6502801833927663),
+    (abundance_3by2, 2.0, "beta", False, similarity_3by2, 0.5942352817544037),
+    (abundance_3by2, 2.0, "gamma", False, similarity_3by2, 1.5060240963855422),
 ]
 
 
 @mark.parametrize(
-    argnames="viewpoint, measure, normalize, similarity, expected", argvalues=argvalues
+    argnames="abundance, viewpoint, measure, normalize, similarity, expected",
+    argvalues=argvalues,
 )
-def test_diversity(viewpoint, measure, normalize, similarity, expected):
+def test_diversity(abundance, viewpoint, measure, normalize, similarity, expected):
     diversity = Diversity(viewpoint=viewpoint, measure=measure, normalize=normalize)
     assert torch.isclose(diversity(abundance, similarity), torch.tensor(expected))
 
@@ -58,9 +86,7 @@ def abundance_similarity_strategy(draw):
             np.float64,
             (n_species, m_subcommunities),
             elements=st.floats(0.001, 1, allow_infinity=False, allow_nan=False),
-        ).map(
-            lambda x: x / x.sum()
-        )  # Ensure the array sums to 1
+        ).map(lambda x: x / x.sum())  # Ensure the array sums to 1
     )
     similarity = draw(
         arrays(
