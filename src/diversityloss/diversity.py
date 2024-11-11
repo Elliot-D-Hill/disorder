@@ -4,23 +4,33 @@ from typing import Callable
 import numpy as np
 import torch
 
-MAX_ORDER = 32
+MAX_ORDER = 100
 
 
 def weighted_power_mean(
-    items: torch.Tensor, weights: torch.Tensor, order: float, atol: float = 1e-6
+    items: torch.Tensor,
+    weights: torch.Tensor,
+    order: float | torch.Tensor,
+    atol: float = 1e-8,
+    epsilon: float = 0.01,
 ) -> torch.Tensor:
+    items = items.float()
     weight_is_zero = torch.abs(weights) < atol
-    if np.isclose(order, 0.0, atol=atol):
+    if order == 0.0:
         weighted_items = torch.pow(items, weights).masked_fill(weight_is_zero, 1.0)
         return torch.prod(weighted_items, dim=0)
-    elif order < -MAX_ORDER:
+    if order <= -MAX_ORDER:
         return torch.amin(items.masked_fill(weight_is_zero, float("inf")), dim=0)
-    elif order > MAX_ORDER:
+    if order >= MAX_ORDER:
         return torch.amax(items.masked_fill(weight_is_zero, float("-inf")), dim=0)
-    else:
-        exponentiated_items = torch.pow(items, order).masked_fill(weight_is_zero, 0.0)
-        return torch.sum(exponentiated_items * weights, dim=0) ** (1.0 / order)
+    if np.abs(order) < epsilon:
+        log_items = torch.log(items)
+        mu = torch.sum(weights * log_items, dim=0)
+        sigma_sq = torch.sum(weights * log_items**2, dim=0) - mu**2
+        return torch.exp(mu) * (1.0 + (order * sigma_sq) / 2.0)
+    exponentiated_items = torch.pow(items, order).masked_fill(weight_is_zero, 0.0)
+    weighted_sum = torch.sum(exponentiated_items * weights, dim=0)
+    return weighted_sum ** (1.0 / order)
 
 
 def weight_abundance(
@@ -90,7 +100,7 @@ def community_ratio(
 def subcommunity_diversity(
     abundance: torch.Tensor,
     normalizing_constants: torch.Tensor,
-    viewpoint: float,
+    viewpoint: float | torch.Tensor,
     measure: str,
     normalize: bool = True,
     similarity: torch.Tensor | None = None,
@@ -125,7 +135,7 @@ def _validate_args(measure: str, normalize: bool) -> None:
 
 def diversity(
     abundance: torch.Tensor,
-    viewpoint: float,
+    viewpoint: float | torch.Tensor,
     measure: str,
     normalize: bool = True,
     similarity: torch.Tensor | None = None,
