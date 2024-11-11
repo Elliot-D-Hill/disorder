@@ -1,150 +1,167 @@
+from functools import partial
 from typing import Callable
 
-from numpy import isclose
-from torch import (
-    Tensor,
-    abs,
-    amax,
-    amin,
-    broadcast_to,
-    pow,
-    prod,
-    sum,
-)
-from torch.nn import Module
+import numpy as np
+import torch
 
 MAX_ORDER = 32
 
 
-# TODO tolerance (atol) should be higher if using entropy instead of diversity
-# because entropy uses logs, which are more numerically stable; we can also can
-# increase the max and min order
 def weighted_power_mean(
-    items: Tensor, weights: Tensor, order: float, atol: float = 1e-7
-) -> Tensor:
-    weight_is_zero = abs(weights) < atol
-    if isclose(order, 0.0, atol=atol):
-        weighted_items = pow(items, weights).masked_fill(weight_is_zero, 1.0)
-        return prod(weighted_items, dim=0)
+    items: torch.Tensor, weights: torch.Tensor, order: float, atol: float = 1e-6
+) -> torch.Tensor:
+    weight_is_zero = torch.abs(weights) < atol
+    if np.isclose(order, 0.0, atol=atol):
+        weighted_items = torch.pow(items, weights).masked_fill(weight_is_zero, 1.0)
+        return torch.prod(weighted_items, dim=0)
     elif order < -MAX_ORDER:
-        return amin(items.masked_fill(weight_is_zero, float("inf")), dim=0)
+        return torch.amin(items.masked_fill(weight_is_zero, float("inf")), dim=0)
     elif order > MAX_ORDER:
-        return amax(items.masked_fill(weight_is_zero, float("-inf")), dim=0)
+        return torch.amax(items.masked_fill(weight_is_zero, float("-inf")), dim=0)
     else:
-        exponentiated_items = pow(items, order).masked_fill(weight_is_zero, 0.0)
-        weighted_items = exponentiated_items * weights
-        weighted_item_sum = sum(weighted_items, dim=0)
-        return pow(weighted_item_sum, exponent=1 / order)
+        exponentiated_items = torch.pow(items, order).masked_fill(weight_is_zero, 0.0)
+        return torch.sum(exponentiated_items * weights, dim=0) ** (1.0 / order)
 
 
-def weight_abundance(abundance: Tensor, similarity: Tensor | None = None) -> Tensor:
+def weight_abundance(
+    abundance: torch.Tensor, similarity: torch.Tensor | None = None
+) -> torch.Tensor:
     if similarity is None:
         return abundance
     return similarity @ abundance
 
 
-def alpha(abundance: Tensor, _, similarity: Tensor | None = None) -> Tensor:
+def alpha(
+    abundance: torch.Tensor, similarity: torch.Tensor | None = None
+) -> torch.Tensor:
     return 1 / weight_abundance(abundance, similarity)
 
 
-def rho(abundance: Tensor, _, similarity: Tensor | None = None) -> Tensor:
+def rho(
+    abundance: torch.Tensor,
+    metacommunity_abundance: torch.Tensor,
+    similarity: torch.Tensor | None = None,
+) -> torch.Tensor:
     subcommunity_similarity = weight_abundance(abundance, similarity)
-    metacommunity_abundance = abundance.sum(dim=1, keepdim=True)
     metacommunity_similarity = weight_abundance(metacommunity_abundance, similarity)
     return metacommunity_similarity / subcommunity_similarity
 
 
-def beta(abundance: Tensor, _, similarity: Tensor | None = None) -> Tensor:
-    return rho(abundance, _, similarity)
-
-
-def gamma(abundance: Tensor, _, similarity: Tensor | None = None) -> Tensor:
-    metacommunity_abundance = abundance.sum(dim=1, keepdim=True)
-    metacommunity_abundance = broadcast_to(metacommunity_abundance, abundance.shape)
+def gamma(
+    abundance: torch.Tensor,
+    metacommunity_abundance: torch.Tensor,
+    similarity: torch.Tensor | None = None,
+) -> torch.Tensor:
+    metacommunity_abundance = torch.broadcast_to(
+        metacommunity_abundance, abundance.shape
+    )
     metacommunity_similarity = weight_abundance(metacommunity_abundance, similarity)
     return 1 / metacommunity_similarity
 
 
-def normalized_alpha(_, normalized_abundance: Tensor, similarity: Tensor | None = None):
-    return 1 / weight_abundance(normalized_abundance, similarity)
-
-
-def normalized_rho(
-    abundance: Tensor, normalized_abundance: Tensor, similarity: Tensor | None = None
-) -> Tensor:
-    normalized_subcommunity_similarity = weight_abundance(
-        normalized_abundance, similarity
-    )
-    metacommunity_abundance = abundance.sum(dim=1, keepdim=True)
-    metacommunity_similarity = weight_abundance(metacommunity_abundance, similarity)
-    return metacommunity_similarity / normalized_subcommunity_similarity
-
-
-def normalized_beta(
-    abundance: Tensor, normalized_abundance: Tensor, similarity: Tensor | None = None
-) -> Tensor:
-    return normalized_rho(abundance, normalized_abundance, similarity)
-
-
-# Note: gamma cannot be normalized, so it will be returned whether normalize = True or False
-MEASURES: dict[tuple[str, bool], Callable[[Tensor, Tensor, Tensor | None], Tensor]] = {
-    ("alpha", False): alpha,
-    ("beta", False): beta,
-    ("rho", False): rho,
-    ("alpha", True): normalized_alpha,
-    ("beta", True): normalized_beta,
-    ("rho", True): normalized_rho,
-    ("gamma", True): gamma,
-    ("gamma", False): gamma,
+MEASURES: dict[str, Callable] = {
+    "alpha": alpha,
+    "beta": rho,
+    "rho": rho,
+    "gamma": gamma,
 }
 
 
-class Diversity(Module):
+def community_ratio(
+    measure: str,
+    abundance: torch.Tensor,
+    normalized_abundance: torch.Tensor,
+    normalize: bool,
+    similarity: torch.Tensor | None = None,
+):
+    f = MEASURES[measure]
+    if f in {gamma, rho}:
+        metacommunity_abundance = abundance.sum(dim=1, keepdim=True)
+        f = partial(f, metacommunity_abundance=metacommunity_abundance)
+    if normalize:
+        f = partial(f, abundance=normalized_abundance)
+    else:
+        f = partial(f, abundance=abundance)
+    if similarity is not None:
+        f = partial(f, similarity=similarity)
+    return f()
+
+
+def subcommunity_diversity(
+    abundance: torch.Tensor,
+    normalizing_constants: torch.Tensor,
+    viewpoint: float,
+    measure: str,
+    normalize: bool = True,
+    similarity: torch.Tensor | None = None,
+) -> torch.Tensor:
+    order = 1.0 - viewpoint
+    normalized_abundance = abundance / normalizing_constants
+    ratio = community_ratio(
+        measure=measure,
+        abundance=abundance,
+        normalized_abundance=normalized_abundance,
+        normalize=normalize,
+        similarity=similarity,
+    )
+    subcommunity_diversity = weighted_power_mean(
+        items=ratio, weights=normalized_abundance, order=order
+    )
+    if measure == "beta":
+        subcommunity_diversity = 1 / subcommunity_diversity
+    return subcommunity_diversity
+
+
+def _validate_args(measure: str, normalize: bool) -> None:
+    if measure not in {"alpha", "beta", "rho", "gamma"}:
+        raise ValueError(
+            f"Invalid 'measure' argument: {measure}. Expected one of: 'alpha', 'beta', 'rho', 'gamma'."
+        )
+    if not isinstance(normalize, bool):
+        raise ValueError(
+            f"Invalid 'normalize' argument: {normalize}. Expected type bool."
+        )
+
+
+def diversity(
+    abundance: torch.Tensor,
+    viewpoint: float,
+    measure: str,
+    normalize: bool = True,
+    similarity: torch.Tensor | None = None,
+) -> torch.Tensor:
+    _validate_args(measure, normalize)
+    order = 1.0 - viewpoint
+    normalizing_constants = abundance.sum(dim=0)
+    sub_diversity = subcommunity_diversity(
+        abundance=abundance,
+        normalizing_constants=normalizing_constants,
+        viewpoint=viewpoint,
+        measure=measure,
+        normalize=normalize,
+        similarity=similarity,
+    )
+    return weighted_power_mean(
+        items=sub_diversity,
+        weights=normalizing_constants,
+        order=order,
+    )
+
+
+class Diversity(torch.nn.Module):
     def __init__(self, viewpoint: float, measure: str, normalize: bool = True) -> None:
         super().__init__()
-        self._validate_args(measure, normalize)
-        self.order = 1.0 - viewpoint
-        self.measure = MEASURES[(measure, normalize)]
+        self.viewpoint = viewpoint
+        self.measure = measure
+        self.normalize = normalize
 
-    def _validate_args(self, measure: str, normalize: bool) -> None:
-        if measure not in {"alpha", "beta", "rho", "gamma"}:
-            raise ValueError(
-                f"Invalid 'measure' argument: {measure}. Expected one of: 'alpha', 'beta', 'rho', 'gamma'."
-            )
-        if not isinstance(normalize, bool):
-            raise ValueError(
-                f"Invalid 'normalize' argument: {normalize}. Expected type bool."
-            )
-
-    def subcommunity_diversity(
-        self,
-        abundance: Tensor,
-        normalizing_constants: Tensor,
-        similarity: Tensor | None = None,
-    ) -> Tensor:
-        normalized_abundance = abundance / normalizing_constants
-        community_ratio = self.measure(abundance, normalized_abundance, similarity)
-        power_mean = weighted_power_mean(
-            items=community_ratio, weights=normalized_abundance, order=self.order
-        )
-        if self.measure in {beta, normalized_beta}:
-            power_mean = 1 / power_mean
-        return power_mean
-
-    def metacommunity_diversity(
-        self, abundance: Tensor, similarity: Tensor | None = None
-    ) -> Tensor:
-        normalizing_constants = abundance.sum(dim=0)
-        subcommunity_diversity = self.subcommunity_diversity(
+    def forward(
+        self, abundance: torch.Tensor, similarity: torch.Tensor | None = None
+    ) -> torch.Tensor:
+        return diversity(
             abundance=abundance,
-            normalizing_constants=normalizing_constants,
+            viewpoint=self.viewpoint,
+            measure=self.measure,
+            normalize=self.normalize,
             similarity=similarity,
         )
-        return weighted_power_mean(
-            items=subcommunity_diversity,
-            weights=normalizing_constants,
-            order=self.order,
-        )
-
-    def forward(self, abundance: Tensor, similarity: Tensor | None = None) -> Tensor:
-        return self.metacommunity_diversity(abundance, similarity)

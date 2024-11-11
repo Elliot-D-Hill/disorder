@@ -8,7 +8,16 @@ from pytest import mark
 
 n_tests = 10
 
-counts_6by2 = torch.tensor([[1, 0], [1, 0], [1, 0], [0, 1], [0, 1], [0, 1]])
+counts_6by2 = torch.tensor(
+    [
+        [1, 0],
+        [1, 0],
+        [1, 0],
+        [0, 1],
+        [0, 1],
+        [0, 1],
+    ]
+)
 abundance_6by2 = counts_6by2 / counts_6by2.sum()
 similarity_6by2 = torch.tensor(
     [
@@ -49,10 +58,10 @@ argvalues = [
     (abundance_6by2, 9.0, "rho", False, similarity_6by2, 2.05),
     (abundance_6by2, 10.0, "beta", False, similarity_6by2, 0.487805),
     (abundance_6by2, 11.0, "gamma", True, similarity_6by2, 1.463415),
-    (abundance_6by2, 12.0, "alpha", True, similarity_6by2, 1.5),
-    (abundance_6by2, 13.0, "rho", True, similarity_6by2, 1.025),
-    (abundance_6by2, 14.0, "beta", True, similarity_6by2, 0.97561),
-    (abundance_6by2, 15.0, "gamma", True, similarity_6by2, 1.463415),
+    (abundance_6by2, float("inf"), "alpha", True, similarity_6by2, 1.5),
+    (abundance_6by2, float("-inf"), "rho", True, similarity_6by2, 1.025),
+    (abundance_6by2, float("inf"), "beta", True, similarity_6by2, 0.97561),
+    (abundance_6by2, float("-inf"), "gamma", True, similarity_6by2, 1.463415),
     (abundance_3by2, 2.0, "alpha", False, None, 2.7777777777777777),
     (abundance_3by2, 2.0, "rho", False, None, 1.2),
     (abundance_3by2, 2.0, "beta", False, None, 0.8319209039548022),
@@ -64,6 +73,9 @@ argvalues = [
     (abundance_3by2, 2.0, "rho", False, similarity_3by2, 1.6502801833927663),
     (abundance_3by2, 2.0, "beta", False, similarity_3by2, 0.5942352817544037),
     (abundance_3by2, 2.0, "gamma", False, similarity_3by2, 1.5060240963855422),
+    (abundance_3by2, 2.0, "alpha", True, similarity_3by2, 1.2903225806451613),
+    (abundance_3by2, 2.0, "rho", True, similarity_3by2, 0.8485572790897555),
+    (abundance_3by2, 2.0, "beta", True, similarity_3by2, 1.1744247216675028),
 ]
 
 
@@ -85,8 +97,8 @@ def abundance_similarity_strategy(draw):
         arrays(
             np.float64,
             (n_species, m_subcommunities),
-            elements=st.floats(0.001, 1, allow_infinity=False, allow_nan=False),
-        ).map(lambda x: x / x.sum())  # Ensure the array sums to 1
+            elements=st.floats(0.0001, 1, allow_infinity=False, allow_nan=False),
+        ).map(lambda x: x / x.sum())
     )
     similarity = draw(
         arrays(
@@ -100,7 +112,7 @@ def abundance_similarity_strategy(draw):
 
 
 @given(abundance_similarity_strategy())
-def test_similarity_le_frequency(data):
+def test_similarity_less_than_frequency(data):
     viewpoint, abundance, similarity = data
     abundance = torch.as_tensor(abundance)
     similarity = torch.as_tensor(similarity)
@@ -109,4 +121,26 @@ def test_similarity_le_frequency(data):
     similarity_sensitive = diversity(abundance, similarity)
     assert (similarity_sensitive < frequency_sensitive) or torch.isclose(
         similarity_sensitive, frequency_sensitive
+    )
+
+
+@st.composite
+def abundance_similarity_viewpoint_strategy(draw):
+    data = draw(abundance_similarity_strategy())
+    viewpoint_a = draw(st.floats(min_value=0.0, max_value=10.0))
+    viewpoint_b = viewpoint_a + draw(st.floats(min_value=0.1, max_value=5.0))
+    return viewpoint_a, viewpoint_b, data[1], data[2]
+
+
+@given(abundance_similarity_viewpoint_strategy())
+def test_diversity_monotonicity(data):
+    viewpoint_a, viewpoint_b, abundance, similarity = data
+    abundance = torch.as_tensor(abundance)
+    similarity = torch.as_tensor(similarity)
+    diversity_a = Diversity(viewpoint=viewpoint_a, measure="alpha", normalize=True)
+    diversity_b = Diversity(viewpoint=viewpoint_b, measure="alpha", normalize=True)
+    diversity_a_value = diversity_a(abundance, similarity)
+    diversity_b_value = diversity_b(abundance, similarity)
+    assert (diversity_a_value > diversity_b_value) or torch.isclose(
+        diversity_a_value, diversity_b_value
     )
