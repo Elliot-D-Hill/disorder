@@ -1,2 +1,1 @@
-# template
-A template for AI projects in python
+# Disorder: entropy and diversity in Python
