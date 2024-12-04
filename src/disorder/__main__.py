@@ -1,20 +1,21 @@
-import matplotlib.pyplot as plt
 import torch
+from matplotlib import pyplot as plt
 
-from diversityloss.diversity import diversity
+from disorder.diversity import diversity
 
-if __name__ == "__main__":
+
+def main():
     torch.manual_seed(123)
-    a = torch.rand(100, 16)
+    a = torch.rand(10, 1)
     a = a / a.sum()
     x = torch.rand(100, 32)
     dist = torch.cdist(x, x)
-    sim = torch.exp(-dist)
-    viewpoints = torch.arange(0.9, 1.1, 0.00001)
+    similarity = torch.exp(-dist)
+    viewpoints = torch.arange(0.98, 1.0, 0.00001)
     d = [
         diversity(
             abundance=a,
-            # similarity=sim,
+            similarity=similarity,
             viewpoint=viewpoints,
             measure="alpha",
             normalize=True,
@@ -23,3 +24,7 @@ if __name__ == "__main__":
     ]
     plt.plot(viewpoints, d)
     plt.savefig("diversity.png")
+
+
+if __name__ == "__main__":
+    main()

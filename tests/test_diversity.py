@@ -1,6 +1,6 @@
 import numpy as np
 import torch
-from diversityloss.diversity import Diversity
+from disorder.diversity import Diversity
 from hypothesis import given
 from hypothesis import strategies as st
 from hypothesis.extra.numpy import arrays

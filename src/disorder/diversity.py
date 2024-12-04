@@ -1,10 +1,19 @@
 from functools import partial
 from typing import Callable
 
-import numpy as np
 import torch
 
 MAX_ORDER = 100
+
+
+def taylor_series_approximation(
+    items: torch.Tensor, weights: torch.Tensor, order: float | torch.Tensor
+) -> torch.Tensor:
+    # First order Taylor series approximation of the geometric mean
+    log_items = torch.log(items)
+    mu = torch.sum(weights * log_items, dim=0)
+    sigma_sq = torch.sum(weights * log_items**2, dim=0) - mu**2
+    return torch.exp(mu) * (1.0 + (order * sigma_sq) / 2.0)
 
 
 def weighted_power_mean(
@@ -12,25 +21,19 @@ def weighted_power_mean(
     weights: torch.Tensor,
     order: float | torch.Tensor,
     atol: float = 1e-8,
-    epsilon: float = 0.01,
+    epsilon: float = 0.001,
 ) -> torch.Tensor:
-    items = items.float()
-    weight_is_zero = torch.abs(weights) < atol
+    is_zero = torch.abs(weights) < atol
     if order == 0.0:
-        weighted_items = torch.pow(items, weights).masked_fill(weight_is_zero, 1.0)
-        return torch.prod(weighted_items, dim=0)
+        return torch.pow(items, weights).masked_fill(is_zero, 1.0).prod(dim=0)
     if order <= -MAX_ORDER:
-        return torch.amin(items.masked_fill(weight_is_zero, float("inf")), dim=0)
+        return torch.amin(items.masked_fill(is_zero, float("inf")), dim=0)
     if order >= MAX_ORDER:
-        return torch.amax(items.masked_fill(weight_is_zero, float("-inf")), dim=0)
-    if np.abs(order) < epsilon:
-        log_items = torch.log(items)
-        mu = torch.sum(weights * log_items, dim=0)
-        sigma_sq = torch.sum(weights * log_items**2, dim=0) - mu**2
-        return torch.exp(mu) * (1.0 + (order * sigma_sq) / 2.0)
-    exponentiated_items = torch.pow(items, order).masked_fill(weight_is_zero, 0.0)
-    weighted_sum = torch.sum(exponentiated_items * weights, dim=0)
-    return weighted_sum ** (1.0 / order)
+        return torch.amax(items.masked_fill(is_zero, float("-inf")), dim=0)
+    if abs(order) < epsilon:
+        return taylor_series_approximation(items, weights, order)
+    items = torch.pow(items, order).masked_fill(is_zero, 0.0)
+    return (items * weights).sum(dim=0) ** (1.0 / order)
 
 
 def weight_abundance(
