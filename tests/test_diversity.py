@@ -85,7 +85,7 @@ argvalues = [
 )
 def test_diversity(abundance, viewpoint, measure, normalize, similarity, expected):
     diversity = Diversity(viewpoint=viewpoint, measure=measure, normalize=normalize)
-    assert torch.isclose(diversity(abundance, similarity), torch.tensor(expected))
+    torch.testing.assert_close(diversity(abundance, similarity), torch.tensor(expected))
 
 
 @st.composite
@@ -119,9 +119,7 @@ def test_similarity_less_than_frequency(data):
     diversity = Diversity(viewpoint=viewpoint, measure="alpha", normalize=True)
     frequency_sensitive = diversity(abundance)
     similarity_sensitive = diversity(abundance, similarity)
-    assert (similarity_sensitive < frequency_sensitive) or torch.isclose(
-        similarity_sensitive, frequency_sensitive
-    )
+    assert similarity_sensitive <= frequency_sensitive
 
 
 @st.composite
@@ -141,6 +139,7 @@ def test_diversity_monotonicity(data):
     diversity_b = Diversity(viewpoint=viewpoint_b, measure="alpha", normalize=True)
     diversity_a_value = diversity_a(abundance, similarity)
     diversity_b_value = diversity_b(abundance, similarity)
+    print(viewpoint_a, viewpoint_b, diversity_a_value, diversity_b_value)
     assert (diversity_a_value > diversity_b_value) or torch.isclose(
         diversity_a_value, diversity_b_value
     )

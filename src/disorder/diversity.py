@@ -3,37 +3,35 @@ from typing import Callable
 
 import torch
 
-MAX_ORDER = 100
+MAX_ORDER = 64
 
 
-def taylor_series_approximation(
-    items: torch.Tensor, weights: torch.Tensor, order: float | torch.Tensor
+def geometric_mean_expansion(
+    p: torch.Tensor, x: torch.Tensor, t: float | torch.Tensor
 ) -> torch.Tensor:
-    # First order Taylor series approximation of the geometric mean
-    log_items = torch.log(items)
-    mu = torch.sum(weights * log_items, dim=0)
-    sigma_sq = torch.sum(weights * log_items**2, dim=0) - mu**2
-    return torch.exp(mu) * (1.0 + (order * sigma_sq) / 2.0)
+    log_x = x.log()
+    mu = p.mul(log_x).sum(dim=0)
+    sigma_sq = p.mul(log_x.pow(2.0)).sum(dim=0).sub(mu.pow(2.0))
+    return mu.exp().mul(1.0 + (t * sigma_sq) * 0.5)
 
 
 def weighted_power_mean(
-    items: torch.Tensor,
-    weights: torch.Tensor,
-    order: float | torch.Tensor,
+    x: torch.Tensor,
+    p: torch.Tensor,
+    t: float | torch.Tensor,
     atol: float = 1e-8,
     epsilon: float = 0.001,
 ) -> torch.Tensor:
-    is_zero = torch.abs(weights) < atol
-    if order == 0.0:
-        return torch.pow(items, weights).masked_fill(is_zero, 1.0).prod(dim=0)
-    if order <= -MAX_ORDER:
-        return torch.amin(items.masked_fill(is_zero, float("inf")), dim=0)
-    if order >= MAX_ORDER:
-        return torch.amax(items.masked_fill(is_zero, float("-inf")), dim=0)
-    if abs(order) < epsilon:
-        return taylor_series_approximation(items, weights, order)
-    items = torch.pow(items, order).masked_fill(is_zero, 0.0)
-    return (items * weights).sum(dim=0) ** (1.0 / order)
+    is_zero = torch.abs(p) < atol
+    if t == 0.0:
+        return torch.pow(x, p).masked_fill(is_zero, 1.0).prod(dim=0)
+    if t <= -MAX_ORDER:
+        return torch.amin(x.masked_fill(is_zero, float("inf")), dim=0)
+    if t >= MAX_ORDER:
+        return torch.amax(x.masked_fill(is_zero, float("-inf")), dim=0)
+    if abs(t) < epsilon:
+        return geometric_mean_expansion(p=p, x=x, t=t)
+    return p.mul((x**t).masked_fill(is_zero, 0.0)).sum(dim=0) ** (1.0 / t)
 
 
 def weight_abundance(
@@ -118,7 +116,7 @@ def subcommunity_diversity(
         similarity=similarity,
     )
     subcommunity_diversity = weighted_power_mean(
-        items=ratio, weights=normalized_abundance, order=order
+        x=ratio, p=normalized_abundance, t=order
     )
     if measure == "beta":
         subcommunity_diversity = 1 / subcommunity_diversity
@@ -155,9 +153,9 @@ def diversity(
         similarity=similarity,
     )
     return weighted_power_mean(
-        items=sub_diversity,
-        weights=normalizing_constants,
-        order=order,
+        x=sub_diversity,
+        p=normalizing_constants,
+        t=order,
     )
 
 

@@ -4,9 +4,20 @@ import torch
 MAX_ORDER = 100
 
 
-def entropy(p: torch.Tensor, q: float, z: torch.Tensor | None = None):
-    p = z @ p if z is not None else p
-    return (1.0 / (1.0 - q)) * torch.log(torch.sum(p**q, dim=0))
+def entropy(
+    p: torch.Tensor, q: float, z: torch.Tensor | None = None, atol: float = 1e-8
+):
+    zp = p if z is None else z @ p
+    is_zero = torch.abs(p) < atol
+    if np.isclose(q, 1.0):
+        return -torch.sum(p * zp.masked_fill(is_zero, 1.0).log(), dim=0)
+    if q <= -MAX_ORDER:
+        return -torch.amin(zp.masked_fill(is_zero, torch.inf), dim=0).log()
+    if q >= MAX_ORDER:
+        return -torch.amax(zp.masked_fill(is_zero, -torch.inf), dim=0).log()
+    return (1.0 / (1.0 - q)) * (p / zp ** (1 - q)).masked_fill(is_zero, 0.0).sum(
+        dim=0
+    ).log()
 
 
 def cross_entropy(
@@ -18,8 +29,15 @@ def cross_entropy(
 ):
     zr = r if z is None else z @ r
     is_zero = torch.abs(zr) < atol
-    zr = zr.masked_fill(is_zero, 1.0)
-    return (1.0 / (1.0 - q)) * torch.log(torch.sum(p * (1.0 / zr) ** (1.0 - q), dim=0))
+    if np.isclose(q, 1.0):
+        return (p * (1.0 / zr.masked_fill(is_zero, 1.0)).log()).sum(dim=0)
+    if q <= -MAX_ORDER:
+        return -torch.amin(zr.masked_fill(is_zero, torch.inf), dim=0).log()
+    if q >= MAX_ORDER:
+        return -torch.amax(zr.masked_fill(is_zero, -torch.inf), dim=0).log()
+    return (1.0 / (1.0 - q)) * (p / zr.masked_fill(is_zero, 1.0) ** (1.0 - q)).sum(
+        dim=0
+    ).log()
 
 
 def relative_entropy(
@@ -28,24 +46,16 @@ def relative_entropy(
     q: float,
     z: torch.Tensor | None = None,
     atol: float = 1e-8,
-    epsilon: float = 1e-4,
 ) -> torch.Tensor:
-    if z is None:
-        zp = p
-        zr = r
-    else:
-        zp = z @ p
-        zr = z @ r
+    zp, zr = (p, r) if z is None else (z @ p, z @ r)
     is_zero = torch.abs(r) < atol
-    if np.isclose(q, 1.0, atol=epsilon):
-        r = r.masked_fill(is_zero, 1.0)
-        return (p * (zp / zr).log()).sum(dim=0)
+    if np.isclose(q, 1.0):
+        return (p * (zp / zr.masked_fill(is_zero, 1.0)).log()).sum(dim=0)
     elif q <= -MAX_ORDER:
-        return torch.amin(p.masked_fill(is_zero, float("inf")), dim=0).log()
+        return torch.amin((zp / zr).masked_fill(is_zero, torch.inf), dim=0).log()
     elif q >= MAX_ORDER:
-        return torch.amax(p.masked_fill(is_zero, float("-inf")), dim=0).log()
+        return torch.amax((zp / zr).masked_fill(is_zero, -torch.inf), dim=0).log()
     else:
-        r = r.masked_fill(is_zero, 1.0)
-        return (1.0 / (q - 1.0)) * torch.log(
-            torch.sum(p * (zp / zr) ** (q - 1.0), dim=0)
-        )
+        return (1.0 / (q - 1.0)) * (
+            p * (zp / zr.masked_fill(is_zero, 1.0)) ** (q - 1.0)
+        ).sum(dim=0).log()
