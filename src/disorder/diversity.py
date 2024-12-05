@@ -12,7 +12,7 @@ def geometric_mean_expansion(
     log_x = x.log()
     mu = p.mul(log_x).sum(dim=0)
     sigma_sq = p.mul(log_x.pow(2.0)).sum(dim=0).sub(mu.pow(2.0))
-    return mu.exp().mul(1.0 + (t * sigma_sq) * 0.5)
+    return mu.exp().mul(1.0 + (sigma_sq.mul(t)) * 0.5)
 
 
 def weighted_power_mean(
@@ -20,18 +20,22 @@ def weighted_power_mean(
     p: torch.Tensor,
     t: float | torch.Tensor,
     atol: float = 1e-8,
-    epsilon: float = 0.001,
+    epsilon: float = 1e-4,
 ) -> torch.Tensor:
     is_zero = torch.abs(p) < atol
     if t == 0.0:
-        return torch.pow(x, p).masked_fill(is_zero, 1.0).prod(dim=0)
+        x.masked_fill_(is_zero, 1.0)
+        return (x**p).prod(dim=0)
     if t <= -MAX_ORDER:
-        return torch.amin(x.masked_fill(is_zero, float("inf")), dim=0)
+        x.masked_fill_(is_zero, float("inf"))
+        return torch.amin(x, dim=0)
     if t >= MAX_ORDER:
-        return torch.amax(x.masked_fill(is_zero, float("-inf")), dim=0)
+        x.masked_fill_(is_zero, float("-inf"))
+        return torch.amax(x, dim=0)
     if abs(t) < epsilon:
         return geometric_mean_expansion(p=p, x=x, t=t)
-    return p.mul((x**t).masked_fill(is_zero, 0.0)).sum(dim=0) ** (1.0 / t)
+    x.masked_fill_(is_zero, 1.0)
+    return (p * x**t).sum(dim=0) ** (1.0 / t)
 
 
 def weight_abundance(

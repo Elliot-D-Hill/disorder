@@ -1,6 +1,6 @@
 import numpy as np
 import torch
-from disorder.diversity import Diversity
+from disorder.diversity import Diversity, geometric_mean_expansion
 from hypothesis import given
 from hypothesis import strategies as st
 from hypothesis.extra.numpy import arrays
@@ -86,6 +86,15 @@ argvalues = [
 def test_diversity(abundance, viewpoint, measure, normalize, similarity, expected):
     diversity = Diversity(viewpoint=viewpoint, measure=measure, normalize=normalize)
     torch.testing.assert_close(diversity(abundance, similarity), torch.tensor(expected))
+
+
+@mark.parametrize(argnames="t", argvalues=[0.0, 1e-4, 1e-8])
+def test_geometric_mean_expansion(t):
+    x = torch.tensor([1.0, 2.0, 3.0, 4.0])
+    p = torch.tensor([0.1, 0.2, 0.3, 0.4])
+    geo_mean = geometric_mean_expansion(p=p, x=x, t=t)
+    expected = torch.tensor([2.780803497033874])
+    assert torch.isclose(geo_mean, expected)
 
 
 @st.composite
