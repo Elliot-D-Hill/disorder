@@ -1,6 +1,6 @@
 import torch
-from disorder.diversity import weighted_power_mean
 from disorder.entropy import cross_entropy, entropy, relative_entropy
+from disorder.mean import weighted_power_mean
 from hypothesis import given
 from hypothesis import strategies as st
 
