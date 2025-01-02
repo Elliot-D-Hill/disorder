@@ -163,3 +163,4 @@ data/
 .vscode/
 log.ipynb
 .DS_Store/
+venv/

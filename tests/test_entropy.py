@@ -35,6 +35,7 @@ def test_entropy(data):
     torch.testing.assert_close(result, expected)
 
 
+# FIXME update for new cross_entropy implementation
 @given(data=setup_data())
 def test_cross_entropy(data):
     p, q, alpha, z = data
