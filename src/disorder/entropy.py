@@ -26,13 +26,13 @@ def entropy(
     log_probs = F.log_softmax(input, dim=dim)
     probs = log_probs.exp()
     if similarity is not None:
-        probs = probs @ similarity  # (N, C)
+        probs = probs @ similarity
     probs = torch.clamp(probs, min=eps)
     log_probs = probs.log()
     if abs(order - 1.0) < 1e-9:
         out = -(probs * log_probs).sum(dim=dim)
     else:
-        a = order * log_probs  # shape (N, C)
+        a = order * log_probs
         a_max = a.amax(dim=dim, keepdim=True)
         sum_exp = (a - a_max).exp().sum(dim=dim, keepdim=True)
         log_sum = a_max + sum_exp.log()
