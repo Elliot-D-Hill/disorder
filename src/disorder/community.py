@@ -90,7 +90,7 @@ def subcommunity(
         similarity=similarity,
     )
     subcommunity_diversity = weighted_power_mean(
-        x=ratio, p=normalized_abundance, t=order
+        x=ratio, weights=normalized_abundance, order=order
     )
     if measure == "beta":
         subcommunity_diversity = 1 / subcommunity_diversity
@@ -126,7 +126,9 @@ def metacommunity(
         normalize=normalize,
         similarity=similarity,
     )
-    return weighted_power_mean(x=sub_diversity, p=normalizing_constants, t=order)
+    return weighted_power_mean(
+        x=sub_diversity, weights=normalizing_constants, order=order
+    )
 
 
 class Metacommunity(torch.nn.Module):

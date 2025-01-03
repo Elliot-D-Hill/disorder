@@ -162,5 +162,5 @@ cython_debug/
 data/
 .vscode/
 log.ipynb
-.DS_Store/
+.DS_Store
 venv/

@@ -1,7 +1,6 @@
 import numpy as np
 import torch
 from disorder.community import Metacommunity
-from disorder.mean import geometric_mean_expansion
 from hypothesis import given
 from hypothesis import strategies as st
 from hypothesis.extra.numpy import arrays
@@ -48,6 +47,7 @@ similarity_3by2 = torch.tensor(
 # args: abundance, viewpoint, measure, normalize, similarity, expected
 argvalues = [
     (abundance_6by2, 0.0, "alpha", False, None, 6.0),
+    (abundance_6by2, 1.0001, "alpha", False, None, 6.0),
     (abundance_6by2, 1.0, "rho", False, None, 1.0),
     (abundance_6by2, 2.0, "beta", False, None, 1.0),
     (abundance_6by2, 3.0, "gamma", False, None, 6.0),
@@ -87,15 +87,6 @@ argvalues = [
 def test_diversity(abundance, viewpoint, measure, normalize, similarity, expected):
     diversity = Metacommunity(viewpoint=viewpoint, measure=measure, normalize=normalize)
     torch.testing.assert_close(diversity(abundance, similarity), torch.tensor(expected))
-
-
-@mark.parametrize(argnames="t", argvalues=[0.0, 1e-4, 1e-8])
-def test_geometric_mean_expansion(t):
-    x = torch.tensor([1.0, 2.0, 3.0, 4.0])
-    p = torch.tensor([0.1, 0.2, 0.3, 0.4])
-    geo_mean = geometric_mean_expansion(p=p, x=x, t=t)
-    expected = torch.tensor([2.780803497033874])
-    assert torch.isclose(geo_mean, expected)
 
 
 @st.composite
@@ -149,7 +140,6 @@ def test_diversity_monotonicity(data):
     diversity_b = Metacommunity(viewpoint=viewpoint_b, measure="alpha", normalize=True)
     diversity_a_value = diversity_a(abundance, similarity)
     diversity_b_value = diversity_b(abundance, similarity)
-    print(viewpoint_a, viewpoint_b, diversity_a_value, diversity_b_value)
     assert (diversity_a_value > diversity_b_value) or torch.isclose(
         diversity_a_value, diversity_b_value
     )
