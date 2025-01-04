@@ -24,8 +24,8 @@ def make_dimensions_with_features(draw):
 def test_shannon_entropy(data):
     batch_size, num_classes = data
     input = torch.rand(batch_size, num_classes)
-    result = entropy(input, order=1.0)
-    expected = Categorical(logits=input).entropy()
+    result = entropy(input, order=1.0, reduction="mean")
+    expected = Categorical(logits=input).entropy().mean()
     torch.testing.assert_close(result, expected)
 
 
@@ -69,7 +69,6 @@ def test_renyi_relative_entropy(data):
     result2 = relative_entropy(input, target, order=1.0, similarity=similarity)
     result3 = relative_entropy(input, target, order=2.0, similarity=None)
     expected = torch.nn.functional.kl_div(input, target, reduction="batchmean")
-
     torch.testing.assert_close(result1, expected)
     torch.testing.assert_close(result2, expected)
     torch.testing.assert_close(result3, expected)

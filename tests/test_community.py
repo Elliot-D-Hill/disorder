@@ -1,4 +1,3 @@
-import numpy as np
 import torch
 from disorder.community import Metacommunity
 from hypothesis import given
@@ -96,19 +95,21 @@ def abundance_similarity_strategy(draw):
     viewpoint = draw(st.floats(min_value=0.0, max_value=10.0))
     abundance = draw(
         arrays(
-            np.float64,
+            float,
             (n_species, m_subcommunities),
             elements=st.floats(0.0001, 1, allow_infinity=False, allow_nan=False),
         ).map(lambda x: x / x.sum())
     )
     similarity = draw(
         arrays(
-            np.float64,
+            float,
             (n_species, n_species),
             elements=st.floats(0, 1, allow_infinity=False, allow_nan=False),
         )
     )
-    np.fill_diagonal(similarity, 1.0)
+    abundance = torch.tensor(abundance)
+    similarity = torch.tensor(similarity)
+    similarity.fill_diagonal_(1.0)
     return viewpoint, abundance, similarity
 
 
