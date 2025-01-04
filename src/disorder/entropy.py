@@ -2,25 +2,26 @@ import torch
 import torch.nn.functional as F
 
 
-def reduce_tensor(out: torch.Tensor, reduction: str) -> torch.Tensor:
-    if reduction == "none":
-        return out
-    elif reduction == "mean":
-        return out.mean()
-    elif reduction == "sum":
-        return out.sum()
-    else:
-        raise ValueError(
-            f"Invalid reduction='{reduction}'. Use 'none', 'mean', or 'sum'."
-        )
+def reduce_tensor(input: torch.Tensor, reduction: str) -> torch.Tensor:
+    match reduction:
+        case "none":
+            return input
+        case "mean":
+            return input.mean()
+        case "sum":
+            return input.sum()
+        case _:
+            raise ValueError(
+                f"Invalid reduction='{reduction}'. Use 'none', 'mean', or 'sum'"
+            )
 
 
 def entropy(
     input: torch.Tensor,
     order: float = 1.0,
     similarity: torch.Tensor | None = None,
-    dim: int = -1,
     reduction: str = "mean",
+    dim: int = -1,
     eps: float = 1e-12,
 ):
     log_probs = F.log_softmax(input, dim=dim)
@@ -45,8 +46,8 @@ def cross_entropy(
     target: torch.Tensor,
     similarity: torch.Tensor | None = None,
     order: float = 1.0,
-    dim: int = -1,
     reduction: str = "mean",
+    dim: int = -1,
     eps: float = 1e-12,
 ) -> torch.Tensor:
     log_probs = F.log_softmax(input, dim=dim)
@@ -63,7 +64,7 @@ def cross_entropy(
         sum_exp = torch.exp(a - a_max).sum(dim=dim, keepdim=True)
         log_sum_exp = a_max + sum_exp.log()
         out = (1.0 / (order - 1.0)) * log_sum_exp.squeeze(dim)
-    return reduce_tensor(out=out, reduction=reduction)
+    return reduce_tensor(out, reduction=reduction)
 
 
 def relative_entropy(
@@ -71,8 +72,8 @@ def relative_entropy(
     target: torch.Tensor,
     similarity: torch.Tensor | None = None,
     order: float = 1.0,
-    dim: int = -1,
     reduction: str = "mean",
+    dim: int = -1,
     eps: float = 1e-12,
 ) -> torch.Tensor:
     target = torch.clamp(target, min=eps)
@@ -90,4 +91,4 @@ def relative_entropy(
         sum_exp = (a - a_max).exp().sum(dim=dim, keepdim=True)
         log_sum = a_max + sum_exp.log()
         out = (1.0 / (order - 1.0)) * log_sum.squeeze(dim)
-    return reduce_tensor(out=out, reduction=reduction)
+    return reduce_tensor(out, reduction=reduction)

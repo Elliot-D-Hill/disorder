@@ -90,7 +90,7 @@ def subcommunity(
         similarity=similarity,
     )
     subcommunity_diversity = weighted_power_mean(
-        x=ratio, weights=normalized_abundance, order=order
+        input=ratio, weights=normalized_abundance, order=order
     )
     if measure == "beta":
         subcommunity_diversity = 1 / subcommunity_diversity
@@ -118,7 +118,7 @@ def metacommunity(
     _validate_args(measure, normalize)
     order = 1.0 - viewpoint
     normalizing_constants = abundance.sum(dim=0)
-    sub_diversity = subcommunity(
+    subcommunity_diversity = subcommunity(
         abundance=abundance,
         normalizing_constants=normalizing_constants,
         viewpoint=viewpoint,
@@ -127,7 +127,7 @@ def metacommunity(
         similarity=similarity,
     )
     return weighted_power_mean(
-        x=sub_diversity, weights=normalizing_constants, order=order
+        input=subcommunity_diversity, weights=normalizing_constants, order=order
     )
 
 

@@ -1,91 +1,23 @@
+# from pytest import mark
+import pytest
 import torch
+from conftest import COMMUNITY_CASES, CommunityTestCase
 from disorder.community import Metacommunity
 from hypothesis import given
 from hypothesis import strategies as st
 from hypothesis.extra.numpy import arrays
-from pytest import mark
-
-n_tests = 10
-
-counts_6by2 = torch.tensor(
-    [
-        [1, 0],
-        [1, 0],
-        [1, 0],
-        [0, 1],
-        [0, 1],
-        [0, 1],
-    ]
-)
-abundance_6by2 = counts_6by2 / counts_6by2.sum()
-similarity_6by2 = torch.tensor(
-    [
-        [1.0, 0.5, 0.5, 0.7, 0.7, 0.7],
-        [0.5, 1.0, 0.5, 0.7, 0.7, 0.7],
-        [0.5, 0.5, 1.0, 0.7, 0.7, 0.7],
-        [0.7, 0.7, 0.7, 1.0, 0.5, 0.5],
-        [0.7, 0.7, 0.7, 0.5, 1.0, 0.5],
-        [0.7, 0.7, 0.7, 0.5, 0.5, 1.0],
-    ]
-)
-counts_3by2 = torch.tensor(
-    [
-        [1, 5],
-        [3, 0],
-        [0, 1],
-    ]
-)
-abundance_3by2 = counts_3by2 / counts_3by2.sum()
-similarity_3by2 = torch.tensor(
-    [
-        [1.0, 0.5, 0.1],
-        [0.5, 1.0, 0.2],
-        [0.1, 0.2, 1.0],
-    ]
-)
-# args: abundance, viewpoint, measure, normalize, similarity, expected
-argvalues = [
-    (abundance_6by2, 0.0, "alpha", False, None, 6.0),
-    (abundance_6by2, 1.0001, "alpha", False, None, 6.0),
-    (abundance_6by2, 1.0, "rho", False, None, 1.0),
-    (abundance_6by2, 2.0, "beta", False, None, 1.0),
-    (abundance_6by2, 3.0, "gamma", False, None, 6.0),
-    (abundance_6by2, 4.0, "alpha", True, None, 3.0),
-    (abundance_6by2, 5.0, "rho", True, None, 0.5),
-    (abundance_6by2, 6.0, "beta", True, None, 2.0),
-    (abundance_6by2, 7.0, "gamma", True, None, 6.0),
-    (abundance_6by2, 8.0, "alpha", False, similarity_6by2, 3.0),
-    (abundance_6by2, 9.0, "rho", False, similarity_6by2, 2.05),
-    (abundance_6by2, 10.0, "beta", False, similarity_6by2, 0.487805),
-    (abundance_6by2, 11.0, "gamma", True, similarity_6by2, 1.463415),
-    (abundance_6by2, float("inf"), "alpha", True, similarity_6by2, 1.5),
-    (abundance_6by2, float("-inf"), "rho", True, similarity_6by2, 1.025),
-    (abundance_6by2, float("inf"), "beta", True, similarity_6by2, 0.97561),
-    (abundance_6by2, float("-inf"), "gamma", True, similarity_6by2, 1.463415),
-    (abundance_3by2, 2.0, "alpha", False, None, 2.7777777777777777),
-    (abundance_3by2, 2.0, "rho", False, None, 1.2),
-    (abundance_3by2, 2.0, "beta", False, None, 0.8319209039548022),
-    (abundance_3by2, 2.0, "gamma", False, None, 2.173913043478261),
-    (abundance_3by2, 2.0, "alpha", True, None, 1.4634146341463414),
-    (abundance_3by2, 2.0, "rho", True, None, 0.6050420168067228),
-    (abundance_3by2, 2.0, "beta", True, None, 1.612461673236969),
-    (abundance_3by2, 2.0, "alpha", False, similarity_3by2, 2.5),
-    (abundance_3by2, 2.0, "rho", False, similarity_3by2, 1.6502801833927663),
-    (abundance_3by2, 2.0, "beta", False, similarity_3by2, 0.5942352817544037),
-    (abundance_3by2, 2.0, "gamma", False, similarity_3by2, 1.5060240963855422),
-    (abundance_3by2, 2.0, "alpha", True, similarity_3by2, 1.2903225806451613),
-    (abundance_3by2, 2.0, "rho", True, similarity_3by2, 0.8485572790897555),
-    (abundance_3by2, 2.0, "beta", True, similarity_3by2, 1.1744247216675028),
-]
 
 
-@mark.parametrize(
-    argnames="abundance, viewpoint, measure, normalize, similarity, expected",
-    argvalues=argvalues,
+@pytest.mark.parametrize(
+    "case", [pytest.param(case, id=case.id) for case in COMMUNITY_CASES]
 )
-def test_diversity(abundance, viewpoint, measure, normalize, similarity, expected):
-    diversity = Metacommunity(viewpoint=viewpoint, measure=measure, normalize=normalize)
-    torch.testing.assert_close(diversity(abundance, similarity), torch.tensor(expected))
+def test_diversity(case: CommunityTestCase):
+    diversity = Metacommunity(
+        viewpoint=case.viewpoint, measure=case.measure, normalize=case.normalize
+    )
+    torch.testing.assert_close(
+        diversity(case.abundance, case.similarity), torch.tensor(case.expected)
+    )
 
 
 @st.composite
@@ -114,7 +46,7 @@ def abundance_similarity_strategy(draw):
 
 
 @given(abundance_similarity_strategy())
-def test_similarity_less_than_frequency(data):
+def test_similarity_lte_frequency(data):
     viewpoint, abundance, similarity = data
     abundance = torch.as_tensor(abundance)
     similarity = torch.as_tensor(similarity)
