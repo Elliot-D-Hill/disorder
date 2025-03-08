@@ -4,11 +4,14 @@ MAX_ORDER = 100
 
 
 def geometric_mean_expansion(
-    x: torch.Tensor, weights: torch.Tensor, order: float | torch.Tensor
+    input: torch.Tensor,
+    weights: torch.Tensor,
+    order: float | torch.Tensor,
+    dim: int = 0,
 ) -> torch.Tensor:
-    log_x = x.log()
-    mu = weights.mul(log_x).sum(dim=0)
-    sigma_sq = weights.mul(log_x.pow(2.0)).sum(dim=0).sub(mu.pow(2.0))
+    log_input = input.log()
+    mu = weights.mul(log_input).sum(dim=dim)
+    sigma_sq = weights.mul(log_input.pow(2.0)).sum(dim=0).sub(mu.pow(2.0))
     return mu.exp().mul(1.0 + (sigma_sq.mul(order)) * 0.5)
 
 
@@ -49,13 +52,14 @@ def weighted_power_mean(
     weights: torch.Tensor,
     order: float | torch.Tensor,
     dim: int = 0,
-    eps: float = 1e-8,
+    weight_epsilon: float = 1e-8,
+    order_epsilon: float = 1e-2,
 ) -> torch.Tensor:
-    is_zero = torch.abs(weights) < eps
+    is_zero = torch.abs(weights) < weight_epsilon
     if order == 0.0:
         input.masked_fill_(is_zero, 1.0)
         return (weights * input.log()).sum(dim=dim).exp()
-    if abs(order) < 1e-3:
+    if abs(order) < order_epsilon:
         input.masked_fill_(is_zero, 1.0)
         return geometric_mean_2nd_order_expansion(
             input=input, weights=weights, order=order
