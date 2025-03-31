@@ -3,7 +3,7 @@ import torch
 MAX_ORDER = 100
 
 
-def geometric_mean_expansion(
+def geometric_mean_1st_order_expansion(
     input: torch.Tensor,
     weights: torch.Tensor,
     order: float | torch.Tensor,

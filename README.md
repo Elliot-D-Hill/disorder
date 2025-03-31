@@ -1,1 +1,1 @@
-# Disorder: entropy and diversity in Python
+# Disorder: entropy, diversity, and perplexity in Python

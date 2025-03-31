@@ -1,11 +1,11 @@
-# from pytest import mark
 import pytest
 import torch
 from conftest import COMMUNITY_CASES, CommunityTestCase
-from disorder.community import Metacommunity
 from hypothesis import given
 from hypothesis import strategies as st
 from hypothesis.extra.numpy import arrays
+
+from disorder.community import Metacommunity
 
 
 @pytest.mark.parametrize(

@@ -2,10 +2,11 @@ from dataclasses import dataclass
 
 import torch
 import torch.nn.functional as F
-from disorder.entropy import cross_entropy, entropy, relative_entropy
 from hypothesis import given
 from hypothesis import strategies as st
 from torch.distributions import Categorical
+
+from disorder.entropy import cross_entropy, entropy, relative_entropy
 
 
 @dataclass
@@ -60,7 +61,7 @@ def test_leinster_lte_renyi(data: EntropyCase):
     leinster = cross_entropy(
         data.input, data.target, order=1.0, similarity=data.similarity
     )
-    renyi = torch.nn.functional.cross_entropy(data.input, data.target)
+    renyi = F.cross_entropy(data.input, data.target)
     assert ((leinster < renyi) | torch.isclose(leinster, renyi)).all()
 
 
@@ -70,8 +71,6 @@ def test_renyi_relative_entropy(data: EntropyCase):
     result2 = relative_entropy(
         data.input, data.target, order=1.0, similarity=data.similarity
     )
-    expected = torch.nn.functional.kl_div(
-        data.input, data.target, reduction="batchmean"
-    )
+    expected = F.kl_div(data.input, data.target, reduction="batchmean")
     torch.testing.assert_close(result1, expected)
     torch.testing.assert_close(result2, expected)
