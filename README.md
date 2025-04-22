@@ -1,1 +1,1 @@
-# Disorder: entropy, diversity, and perplexity in Python
+# Disorder: entropy, diversity, and perplexity in PyTorch
